@@ -16,6 +16,12 @@ namespace E_Commerce.Infrastructure.Repositories
         private readonly DbSet<TEntity> _set = dbContext.Set<TEntity>();
         public void Add(TEntity entity) => _set.Add(entity);
 
+        public async Task<int> CountAsync(ISpecifications<TEntity, TKey> specification, CancellationToken ct = default)
+        {
+            var query = SpecificationEvaluator.CreateQuery(_set.AsQueryable(), specification);
+            return await query.CountAsync(ct);
+
+        }
 
         public async Task<IReadOnlyList<TEntity>> GetAllAsync(CancellationToken ct = default)
             => await _set.ToListAsync(ct);
@@ -38,20 +44,6 @@ namespace E_Commerce.Infrastructure.Repositories
         public void Remove(TEntity entity) => _set.Remove(entity);
 
         public void Update(TEntity entity) => _set.Update(entity);
-        //private IQueryable<TEntity> ApplySpecification(ISpecifications<TEntity, TKey> specification)
-        //{
-        //    IQueryable<TEntity> query = _set.AsQueryable();
-        //    if (specification != null)
-        //    {
-        //        if (specification.Includes.Any())
-        //        {
-        //            foreach (var include in specification.Includes)
-        //            {
-        //                query = query.Include(include);
-        //            }
-        //        }
-        //    }
-        //    return query;
-        //}
+    
     }
 }
