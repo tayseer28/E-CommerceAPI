@@ -1,6 +1,11 @@
 ﻿using E_Commerce.Application.Contracts;
 using E_Commerce.Domain.Contracts;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace E_Commerce.Application.Services
 {
@@ -12,17 +17,19 @@ namespace E_Commerce.Application.Services
         {
             _cacheRepository = cacheRepository;
         }
-        public Task<string?> GetAsync(string cacheKey, CancellationToken cancellationToken = default)
-            => _cacheRepository.GetAsync(cacheKey, cancellationToken);
 
-        public Task SetAsync(string cacheKey, object cacheValue, TimeSpan timeToLive, CancellationToken cancellationToken = default)
+
+        public async Task<string?> GetDataAsync(string cacheKey, CancellationToken ct = default)
+            => await _cacheRepository.GetAsync(cacheKey, ct);
+
+        public async Task setDataAsync(string cacheKey, object cacheValue, TimeSpan? timeToLive = null, CancellationToken ct = default)
         {
-            var json = JsonSerializer.Serialize(cacheValue, new JsonSerializerOptions()
+            var jsonValue = JsonSerializer.Serialize(cacheValue, new JsonSerializerOptions()
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+
             });
-            return _cacheRepository.SetAsync(cacheKey, json, timeToLive, cancellationToken);
+            await _cacheRepository.SetAsync(cacheKey, jsonValue, timeToLive, ct);
+
         }
     }
-
 }
