@@ -64,7 +64,7 @@ namespace E_Commerce.Infrastructure.Identity.Services
             if (user == null)
                 return Result<IdentityUserResult>.Fail(Error.Failure("User Not Found", $"User with {email} not found"));
             else
-                return Result<IdentityUserResult>.Ok(new IdentityUserResult(user.Id, user.Email, user.UserName, user.DisplayName));
+                return Result<IdentityUserResult>.Ok(new IdentityUserResult(user.Id, user.DisplayName, user.Email, user.UserName));
         }
 
         public async Task<Result<AddressDto>> GetUserAddressByEmailAsync(string email, CancellationToken cancellationToken = default)
@@ -95,7 +95,7 @@ namespace E_Commerce.Infrastructure.Identity.Services
 
         public async Task<Result<AddressDto>> UpdateOrInsertAddressAsync(string email, AddressDto addressDto, CancellationToken ct = default)
         {
-            var user = await _userManager.Users.Include(u => u.Email).FirstOrDefaultAsync(U => U.Email == email);
+            var user = await _userManager.Users.Include(u => u.Address).FirstOrDefaultAsync(U => U.Email == email);
             if (user?.Address is null)
             {
                 //insert
