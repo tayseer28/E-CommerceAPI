@@ -4,6 +4,11 @@ using E_Commerce.Infrastructure.Identity.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace E_Commerce.Infrastructure.DataSeeding
 {
@@ -14,48 +19,56 @@ namespace E_Commerce.Infrastructure.DataSeeding
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ILogger<IdentityDataSeeder> _logger;
 
-        public IdentityDataSeeder(StoreIdentityDbContext dbContext, UserManager<ApplicationUser> userManager,
-                                   RoleManager<IdentityRole> roleManager, ILogger<IdentityDataSeeder> logger)
+        public IdentityDataSeeder(StoreIdentityDbContext dbContext,
+            UserManager<ApplicationUser> userManager,
+            RoleManager<IdentityRole> roleManager,
+            ILogger<IdentityDataSeeder> logger)
         {
             _dbContext = dbContext;
             _userManager = userManager;
             _roleManager = roleManager;
             _logger = logger;
         }
-        public async Task SeedDataAsync(CancellationToken cancellationToken = default)
+
+        public async Task SeedDataAsync(CancellationToken ct = default)
         {
             try
             {
-                var pendingMigrations = await _dbContext.Database.GetPendingMigrationsAsync(cancellationToken);
+                var pendingMigrations = await _dbContext.Database.GetPendingMigrationsAsync(ct);
                 if (pendingMigrations.Any())
-                    await _dbContext.Database.MigrateAsync(cancellationToken);
+                    await _dbContext.Database.MigrateAsync(ct);
 
-                if (!await _roleManager.Roles.AnyAsync(cancellationToken))
+                if (!await _roleManager.Roles.AnyAsync(ct))
                 {
                     await _roleManager.CreateAsync(new IdentityRole("Admin"));
                     await _roleManager.CreateAsync(new IdentityRole("SuperAdmin"));
                 }
-
-                if (!await _userManager.Users.AnyAsync(cancellationToken))
+                if (!await _userManager.Users.AnyAsync(ct))
                 {
                     var admin = new ApplicationUser
                     {
-                        DisplayName = "Mohamed Ahmed",
-                        Email = "Mohamed@gmail.com",
-                        UserName = "Mohamed",
+                        DisplayName = "Tayseer Abdelqader",
+                        Email = "tayseer@gmail.com",
+                        UserName = "tayseer",
                         PhoneNumber = "01152635285"
                     };
-
-                    var createResult = await _userManager.CreateAsync(admin, "P@ssw0rd");
-                    if (createResult.Succeeded)
+                    var result = await _userManager.CreateAsync(admin, "P@ssw0rd");
+                    if (result.Succeeded)
+                    {
                         await _userManager.AddToRoleAsync(admin, "Admin");
+
+                    }
                     else
+                    {
                         _logger.LogWarning("Could not seed default admin user: {Errors}",
-                            string.Join("; ", createResult.Errors.Select(e => e.Description)));
+                            string.Join("; ", result.Errors.Select(e => e.Description)));
+                    }
                 }
             }
+
             catch (Exception ex)
             {
+
                 _logger.LogError(ex, "Identity data seeding failed.");
                 return;
             }
@@ -63,3 +76,4 @@ namespace E_Commerce.Infrastructure.DataSeeding
     }
 
 }
+

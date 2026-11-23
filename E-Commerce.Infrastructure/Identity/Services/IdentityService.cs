@@ -4,6 +4,11 @@ using E_Commerce.Application.DTOs.Authentications;
 using E_Commerce.Infrastructure.Identity.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace E_Commerce.Infrastructure.Identity.Services
 {
@@ -16,30 +21,17 @@ namespace E_Commerce.Infrastructure.Identity.Services
             _userManager = userManager;
         }
 
-
-        public async Task<Result<IdentityUserResult>> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
-        {
-            var user = await _userManager.FindByEmailAsync(email);
-            if (user is null)
-            {
-                return Result<IdentityUserResult>.Fail(Error.NotFound("User Not Found"));
-            }
-            else
-            {
-                return new IdentityUserResult(user.Id, user.Email, user.UserName, user.DisplayName);
-
-            }
-        }
         public async Task<Result<bool>> CheckPasswordAsync(string email, string password, CancellationToken cancellationToken = default)
         {
             var user = await _userManager.FindByEmailAsync(email);
+            if (user == null)
+                return Result<bool>.Fail(Error.Failure("User Not Found", $"User with {email} not found"));
+            else
+            {
+                return await _userManager.CheckPasswordAsync(user, password);
 
-            if (user is null)
-                return Result<bool>.Fail(Error.NotFound("User Not Found"));
+            }
 
-            var isValid = await _userManager.CheckPasswordAsync(user, password);
-
-            return isValid;
         }
 
         public async Task<Result<IdentityUserResult>> CreateUserAsync(RegisterDto registerDto, CancellationToken cancellationToken = default)
@@ -51,81 +43,87 @@ namespace E_Commerce.Infrastructure.Identity.Services
                 PhoneNumber = registerDto.PhoneNumber,
                 DisplayName = registerDto.DisplayName
             };
-
             var result = await _userManager.CreateAsync(user, registerDto.Password);
             if (!result.Succeeded)
             {
-                var errors = result.Errors.Select(e => new Error(e.Code, e.Description)).ToList();
-                return Result<IdentityUserResult>.Fail(errors);
+                var erros = result.Errors.Select(e => new Error(e.Code, e.Description)).ToList();
+                return Result<IdentityUserResult>.Fail(erros);
             }
-
             return Result<IdentityUserResult>.Ok(new IdentityUserResult(user.Id, user.Email, user.UserName, user.DisplayName));
         }
 
-        public async Task<Result<IReadOnlyList<string>>> GetRolesAsync(string email, CancellationToken cancellationToken = default)
+        public async Task<Result<bool>> EmailExistAsync(string email, CancellationToken cancellationToken = default)
         {
             var user = await _userManager.FindByEmailAsync(email);
-            if (user is null) return Result<IReadOnlyList<string>>.Fail(Error.NotFound($"User '{email}' not found"));
+            return Result<bool>.Ok(user != null);
+        }
+
+        public async Task<Result<IdentityUserResult>> FindByEmailAsync(string email, CancellationToken cancellationToken = default)
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user == null)
+                return Result<IdentityUserResult>.Fail(Error.Failure("User Not Found", $"User with {email} not found"));
+            else
+                return Result<IdentityUserResult>.Ok(new IdentityUserResult(user.Id, user.Email, user.UserName, user.DisplayName));
+        }
+
+        public async Task<Result<AddressDto>> GetUserAddressByEmailAsync(string email, CancellationToken cancellationToken = default)
+        {
+            var user = await _userManager.Users.Include(u => u.Address).FirstOrDefaultAsync(u => u.Email == email);
+            if (user?.Address is null) return Result<AddressDto>.Fail(Error.NotFound("Address Not Found", $"Address for user with email {email} not found"));
+
+            var address = user.Address;
+            return new AddressDto()
+            {
+                FirstName = address.FirstName,
+                LastName = address.LastName,
+                City = address.City,
+                Country = address.Country,
+                Street = address.Street
+            };
+        }
+
+        public async Task<Result<IReadOnlyList<string>>> GetUserRoles(string email, CancellationToken cancellationToken = default)
+        {
+            var user = await _userManager.FindByEmailAsync(email);
+            if (user is null)
+                return Error.NotFound("User Not Found", $"User with {email} not found"); // operator overloading (Result<IReadOnlyList<string>>.Fail(...))
+
             var roles = await _userManager.GetRolesAsync(user);
             return roles.ToList();
         }
 
-        public async Task<Result<AddressDto>> GetAddressByEmailAsync(string email, CancellationToken cancellationToken = default)
+        public async Task<Result<AddressDto>> UpdateOrInsertAddressAsync(string email, AddressDto addressDto, CancellationToken ct = default)
         {
-            var user = await _userManager.Users
-          .Include(u => u.Address)
-          .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
-
-            if (user == null) return Result<AddressDto>.Fail(Error.NotFound($"User '{email}' not found"));
-
-            if (user?.Address == null) return Result<AddressDto>.Fail(Error.NotFound("Address Not Found"));
-
-            return new AddressDto
+            var user = await _userManager.Users.Include(u => u.Email).FirstOrDefaultAsync(U => U.Email == email);
+            if (user?.Address is null)
             {
-                FirstName = user.Address.FirstName,
-                LastName = user.Address.LastName,
-                City = user.Address.City,
-                Street = user.Address.Street,
-                Country = user.Address.Country
-            };
-        }
-
-        public async Task<Result<AddressDto>> UpSertAddressAsync(string email, AddressDto addressDto, CancellationToken cancellationToken = default)
-        {
-            var user = await _userManager.Users
-                        .Include(u => u.Address)
-                        .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
-
-            if (user == null) return Result<AddressDto>.Fail(Error.NotFound($"User '{email}' not found"));
-            if (user.Address is null)
-            {
+                //insert
                 user.Address = new Address
                 {
                     FirstName = addressDto.FirstName,
                     LastName = addressDto.LastName,
                     City = addressDto.City,
-                    Street = addressDto.Street,
-                    Country = addressDto.Country
+                    Country = addressDto.Country,
+                    Street = addressDto.Street
+
                 };
             }
             else
             {
+                // update 
                 user.Address.FirstName = addressDto.FirstName;
                 user.Address.LastName = addressDto.LastName;
                 user.Address.City = addressDto.City;
                 user.Address.Country = addressDto.Country;
                 user.Address.Street = addressDto.Street;
             }
-
-            var result = await _userManager.UpdateAsync(user);
-            if (!result.Succeeded)
-                return Result<AddressDto>.Fail(Error.Failure("Failure", string.Join("; ", result.Errors.Select(e => e.Description))));
-
-            return addressDto;
+            var result =  await _userManager.UpdateAsync(user);
+            if (result.Succeeded)
+                return addressDto;
+            else
+                return Error.Failure("Failure", string.Join(';', result.Errors.Select(e => e.Description)));
         }
-
-        public async Task<Result<bool>> EmailExistsAsync(string email, CancellationToken cancellationToken = default)
-                => await _userManager.FindByEmailAsync(email) is not null;
-
     }
+
 }

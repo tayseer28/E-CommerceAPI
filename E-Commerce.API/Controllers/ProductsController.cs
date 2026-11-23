@@ -1,6 +1,8 @@
-﻿using E_Commerce.Application.Common;
+﻿using E_Commerce.API.Attributes;
+using E_Commerce.Application.Common;
 using E_Commerce.Application.Contracts;
 using E_Commerce.Application.DTOs.Products;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,15 +20,16 @@ namespace E_Commerce.API.Controllers
         } 
 
         [HttpGet]
+        [RedisCach(90)]
         public async Task<ActionResult<PaginatedResult<ProductDto>>> GetAllProducts([FromQuery] ProductQueryParams queryParams, CancellationToken ct)
         {
             var result = await _productService.GetAllProductsAsync(queryParams, ct);
             return ToActionResult(result);
         }
-
+        [Authorize]
         [HttpGet("{id}")]
         //[ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         public async Task<ActionResult<ProductDto>> GetProductById(int id, CancellationToken ct)
         {
             var result = await _productService.GetProductByIdAsync(id, ct);

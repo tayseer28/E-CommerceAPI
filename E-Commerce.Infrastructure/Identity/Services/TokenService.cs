@@ -1,55 +1,63 @@
 ﻿using E_Commerce.Application.Contracts;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using System;
+using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
 using System.Security.Claims;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace E_Commerce.Infrastructure.Identity.Services
 {
-    public class TokenService(IOptions<JwtSettings> jwtOptions) : ITokenService
+    // DS_TOIKHKVHHQTI
+    internal class TokenService : ITokenService
     {
-        private readonly JwtSettings _settings = jwtOptions.Value;
+        private readonly JWTSettings _jwtSettings;
 
+        public TokenService(IOptions<JWTSettings> jwtSettings)
+        {
+            _jwtSettings = jwtSettings.Value;
+        }
         public string CreateToken(string userId, string email, string userName, IEnumerable<string> roles)
         {
+            // claims 
             var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, userId),
-            new(ClaimTypes.Email, email),
-            new(ClaimTypes.Name, userName)
-        };
+            {
+                new Claim(ClaimTypes.NameIdentifier, userId),
+                new Claim(ClaimTypes.Email, email),
+                new Claim(ClaimTypes.Name, userName)
+            };
 
             claims.AddRange(roles.Select(r => new Claim(ClaimTypes.Role, r)));
 
-            if (string.IsNullOrWhiteSpace(_settings.SecretKey))
-                throw new InvalidOperationException("JWT SecretKey is missing");
-
-            if (_settings.SecretKey.Length < 32)
-                throw new InvalidOperationException("JWT SecretKey is too short");
-
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.SecretKey));
+            // sign in credintials  [secret key , security algorithm]
+            var secKey = _jwtSettings.SecretKey;
+            if (string.IsNullOrWhiteSpace(secKey))
+                throw new InvalidOperationException("JWT Secret key is not configured.");
+            if(secKey.Length < 32)
+                throw new InvalidOperationException("JWT Secret Key is too Short.");
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secKey));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
+            // issuer ,audience, expires,
             var token = new JwtSecurityToken(
-                issuer: _settings.Issuer,
-                audience: _settings.Audience,
+                issuer: _jwtSettings.Issuer,
+                audience: _jwtSettings.Audience,
                 claims: claims,
-                notBefore: DateTime.UtcNow,
-
-                expires: DateTime.UtcNow.AddMinutes(_settings.ExpirationMinutes),
-                signingCredentials: credentials);
+                expires: DateTime.UtcNow.AddMinutes(_jwtSettings.ExpirationInMinutes),
+                signingCredentials: credentials
+                );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
     }
-
-
-    public class JwtSettings
+    public class JWTSettings
     {
-        public string SecretKey { get; init; } = default!;
-        public string Issuer { get; init; } = default!;
-        public string Audience { get; init; } = default!;
-        public int ExpirationMinutes { get; init; } = 60;
+        public string SecretKey { get; set; } = default!;
+        public string Issuer { get; set; } = default!;
+        public string Audience { get; set; } = default!;
+        public int ExpirationInMinutes { get; set; }
     }
 }

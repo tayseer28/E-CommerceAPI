@@ -3,6 +3,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace E_Commerce.API.Controllers
 {
+    [Route("api/[controller]")]
+    [ApiController]
     public class ApiBaseController : ControllerBase
     {
         public static ActionResult<T> ToActionResult<T>(Result<T> result)
@@ -46,5 +48,7 @@ namespace E_Commerce.API.Controllers
                 StatusCode = statusCode
             };
         }
+    
+        
     }
 }

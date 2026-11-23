@@ -26,7 +26,7 @@ namespace E_Commerce.Application.Services
         {
             var jsonValue = JsonSerializer.Serialize(cacheValue, new JsonSerializerOptions()
             {
-
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             });
             await _cacheRepository.SetAsync(cacheKey, jsonValue, timeToLive, ct);
 

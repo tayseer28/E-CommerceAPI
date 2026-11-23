@@ -19,7 +19,7 @@ namespace E_Commerce.Application
             services.AddScoped<IProductService, ProductService>();
             services.AddScoped<IBasketService, BasketService>();
             services.AddSingleton<ICacheService, CacheService>();
-            //services.AddScoped<IAuthenticationService, AuthenticationService>();
+            services.AddScoped<IAuthenticationService, AuthenticationService>();
             //services.AddScoped<IOrderService, OrderService>();
             //services.AddScoped<IPaymentService, PaymentService>();
             return services;
