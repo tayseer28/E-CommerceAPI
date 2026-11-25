@@ -1,8 +1,14 @@
 ﻿using E_Commerce.Application.DTOs.Authentications;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
-namespace E_Commerce.Application.DTOs.Order
+namespace E_Commerce.Application.DTOs.Orders
 {
+    // order to pass it to the service method 
     public class OrderDto
     {
         [Required]
@@ -10,6 +16,6 @@ namespace E_Commerce.Application.DTOs.Order
         [Required]
         public int DeliveryMethodId { get; set; }
         [Required]
-        public AddressDto ShipToAddress { get; set; } = default!;
+        public AddressDto ShippingAddress { get; set; } = default!;
     }
 }

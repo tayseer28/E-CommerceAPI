@@ -1,100 +1,126 @@
 ﻿using AutoMapper;
 using E_Commerce.Application.Common;
 using E_Commerce.Application.Contracts;
-using E_Commerce.Application.DTOs.Order;
+using E_Commerce.Application.DTOs.Orders;
 using E_Commerce.Application.Specifications;
 using E_Commerce.Domain.Contracts;
+using E_Commerce.Domain.Entities.Baskets;
 using E_Commerce.Domain.Entities.Orders;
 using E_Commerce.Domain.Entities.Products;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace E_Commerce.Application.Services
 {
-    public class OrderService(
-      IMapper mapper,
-      IUnitOfWork unitOfWork,
-      IBasketRepository basketRepository) : IOrderService
+    public class OrderService : IOrderService
     {
-        public async Task<Result<OrderToReturnDto>> CreateOrderAsync(OrderDto orderDto, string email, CancellationToken cancellationToken = default)
-        {
-            var basket = await basketRepository.GetBasketAsync(orderDto.BasketId, cancellationToken);
+        private readonly IBasketRepository _basketRepository;
+        private readonly IMapper _mapper;
+        private readonly IUnitOfWork _unitOfWork;
 
-            if (basket == null)
-                return Result<OrderToReturnDto>.Fail(Error.NotFound("Basket Not Found", $"Basket With Id {orderDto.BasketId} Is Not Found"));
+        public OrderService(IBasketRepository basketRepository,
+            IMapper mapper,
+            IUnitOfWork unitOfWork)
+        {
+            _basketRepository = basketRepository;
+            _mapper = mapper;
+            _unitOfWork = unitOfWork;
+        }
+
+        public async Task<Result<OrderToReturnDto>> CreateOrderAsync(OrderDto orderDto, string email, CancellationToken ct = default)
+        {
+
+            // get order items (map the basket to order items)
+            var basket = await _basketRepository.GetBasketAsync(orderDto.BasketId);
+            if (basket is null)
+                return Error.NotFound("Basket.NotFound", $"Basket With the Id {orderDto.BasketId} is Not Found");
 
             if (basket.Items.Count == 0)
-                return Result<OrderToReturnDto>.Fail(Error.Validation("Basket is Empty", $"Can Not Create Order With Basket With Id {orderDto.BasketId}"));
+                return Result<OrderToReturnDto>.Fail(Error.Validation("Basket.Empty", $"Can Not Create Order With Basket With Id {orderDto.BasketId}"));
 
+            var OrderItems = new List<OrderItem>(basket.Items.Count);
 
+            var ProductsIds = basket.Items.Select(x => x.Id).ToHashSet();
 
-            var orderRepo = unitOfWork.GetRepository<Order, Guid>();
-            var productRepo = unitOfWork.GetRepository<Product, int>();
-            var existingOrder = await orderRepo.GetByIdAsync(new PaymentIntentSpec(basket.PaymentIntentId), cancellationToken);
-            if (existingOrder is not null) orderRepo.Remove(existingOrder);
+            var Products = (await _unitOfWork.GetRepository<Product, int>()
+                .GetAllAsync(new ProductWithIdSpecefications(ProductsIds), ct)).ToDictionary(X => X.Id); // matched products of the basket item from the database 
 
-            var productIds = basket.Items.Select(i => i.Id).ToHashSet();
-            var products = (await productRepo.GetAllAsync(new ProductsWithIdsSpecifications(productIds), cancellationToken)).ToDictionary(x => x.Id);
-
-            var orderItems = new List<OrderItem>(basket.Items.Count);
             foreach (var item in basket.Items)
             {
-                if (!products.TryGetValue(item.Id, out var product))
-                    return Result<OrderToReturnDto>.Fail(Error.NotFound("Product Not Found", $"Product With Id {item.Id} Is Not Found "));
-
-                orderItems.Add(new OrderItem
+                // get the product value 
+                if (!Products.TryGetValue(item.Id, out var product))
+                    return Error.NotFound("Product.NotFound", $"Product with Id {item.Id} is Not Found");
+                var orderItem = new OrderItem()
                 {
+                    
                     Price = product.Price,
                     Quantity = item.Quantity,
-                    Product = new ProductItemOrdered
+                    ProductItemOrdered = new ProductItemOrdered ()
                     {
                         ProductId = product.Id,
-                        ProductName = product.Name,
-                        PictureUrl = product.PictureUrl
+                        PictureUrl = product.PictureUrl,
+                        ProductName = product.Name
                     }
-                });
+                };
+                OrderItems.Add(orderItem);
             }
+            // get shippings address (as the order address )
+            var orderAdderss = _mapper.Map<OrderAddress>(orderDto.ShippingAddress);
 
-            var orderAddress = mapper.Map<OrderAddress>(orderDto.ShipToAddress);
-            var deliveryRepo = unitOfWork.GetRepository<DeliveryMethod, int>();
-            var deliveryMethod = await deliveryRepo.GetByIdAsync(orderDto.DeliveryMethodId, cancellationToken);
-            if (deliveryMethod == null)
-                return Result<OrderToReturnDto>.Fail(Error.NotFound("Delivery Method Not Found", $"DeliveryMethod With Id {orderDto.DeliveryMethodId} Is Not Found "));
+            // get the deliveryMethod (validate it)
+            var deliveryMethod = await _unitOfWork.GetRepository<DeliveryMethod, int>().GetByIdAsync(orderDto.DeliveryMethodId);
+            if (deliveryMethod is null)
+                return Error.NotFound("DeliveryMethod.NotFound", $"Delivery Method with Id{orderDto.DeliveryMethodId} not Found");
 
-            var subTotal = orderItems.Sum(x => x.Quantity * x.Price);
-            var order = new Order(email, orderItems, orderAddress, deliveryMethod, subTotal, basket.PaymentIntentId);
+            // get subtotal
+            var subTotal = OrderItems.Sum(x => x.Quantity * x.Price);
 
-            orderRepo.Add(order);
-            var result = await unitOfWork.SaveChangesAsync(cancellationToken);
-
-            if (result <= 0)
+            var order = new Order(email, orderAdderss, deliveryMethod, OrderItems, subTotal);
+            _unitOfWork.GetRepository<Order, Guid>().Add(order); // local
+            var result = await _unitOfWork.SaveChangesAsync(ct);
+            if (result == 0)
+                return Error.Failure("Order.SaveFailed", "Cannot Create Order");
+            else
             {
-                return Result<OrderToReturnDto>.Fail(Error.Failure("Order Save Failed", "Cannot create order."));
+                await _basketRepository.DeleteBasketAsync(orderDto.BasketId, ct);
+                return _mapper.Map<OrderToReturnDto>(order);
+
             }
 
-            await basketRepository.DeleteBasketAsync(orderDto.BasketId, cancellationToken);
-
-            return mapper.Map<OrderToReturnDto>(order);
         }
 
-        public async Task<Result<IReadOnlyList<DeliveryMethodDto>>> GetAllDeliveryMethodsAsync(CancellationToken cancellationToken = default)
+        public async Task<Result<IReadOnlyList<DeliveryMethodDto>>> GetAllDeliveryMethodsAsync(CancellationToken ct = default)
         {
-            var deliveryMethods = await unitOfWork.GetRepository<DeliveryMethod, int>().GetAllAsync(cancellationToken);
-            return Result<IReadOnlyList<DeliveryMethodDto>>.Ok(mapper.Map<IReadOnlyList<DeliveryMethodDto>>(deliveryMethods));
+            var deliveryMethods = await _unitOfWork.GetRepository<DeliveryMethod, int>().GetAllAsync(ct);
+            if (deliveryMethods.Any())
+                return Result<IReadOnlyList<DeliveryMethodDto>>.Ok(_mapper.Map<IReadOnlyList<DeliveryMethodDto>>(deliveryMethods));
+
+            else
+                return Error.NotFound("Delivery Methods Not Found", $"Failed To Fetch Delivery Methods");
+
         }
 
-        public async Task<Result<IReadOnlyList<OrderToReturnDto>>> GetAllOrdersAsync(string email, CancellationToken cancellationToken = default)
+        public async Task<Result<IReadOnlyList<OrderToReturnDto>>> GetAllOrdersForUserAsync(string email, CancellationToken ct = default)
         {
-            var orders = await unitOfWork.GetRepository<Order, Guid>()
-                .GetAllAsync(new OrderSpecifications(email), cancellationToken);
-            return Result<IReadOnlyList<OrderToReturnDto>>.Ok(mapper.Map<IReadOnlyList<OrderToReturnDto>>(orders));
+            var orders = await _unitOfWork.GetRepository<Order, Guid>().GetAllAsync(new OrderSpecifications(email));
+            if (orders.Any())
+                return Result<IReadOnlyList<OrderToReturnDto>>.Ok(_mapper.Map<IReadOnlyList<OrderToReturnDto>>(orders));
+
+            else
+                return Error.NotFound("Orders Not Found", $"No Orders Found For User With Email{email}");
         }
 
-        public async Task<Result<OrderToReturnDto>> GetOrderByIdAndEmailAsync(Guid id, string email, CancellationToken cancellationToken = default)
+        public async Task<Result<OrderToReturnDto>> GetOrderForUserByIdAsync(Guid orderId, string email, CancellationToken ct = default)
         {
-            var order = await unitOfWork.GetRepository<Order, Guid>().GetByIdAsync(new OrderSpecifications(id, email), cancellationToken);
-            if (order == null)
-                return Result<OrderToReturnDto>.Fail(Error.NotFound("Order Not Found", $"Order With Id {id} Is Not Found"));
-            return mapper.Map<OrderToReturnDto>(order);
+            var order = await _unitOfWork.GetRepository<Order, Guid>().GetByIdAsync(new OrderSpecifications(orderId, email));
+            if (order is not null)
+                return Result<OrderToReturnDto>.Ok(_mapper.Map<OrderToReturnDto>(order));
+
+            else
+                return Error.NotFound("Order Not Found", $"No Order Found For User With Email{email} and Order Id {orderId}");
         }
     }
-
 }
